@@ -1,0 +1,5 @@
+{
+  "name": "Staircase Waterway",
+  "description": "A p5.js particle simulation of water flowing down invisible stairs, guided by Perlin noise.",
+  "requestFramePermissions": []
+}
