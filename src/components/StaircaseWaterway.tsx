@@ -73,23 +73,27 @@ class SoundSynthesizer {
       this.init();
       if (!this.ctx) return;
     }
+    // "Bubble Pop" water sound.
     const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
     const gain = this.ctx.createGain();
+    
+    // Bubble popping typically has a sharp, fast upward pitch sweep
+    const baseFreq = 400 + (1 - yRatio) * 300; 
+    osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 2.5, this.ctx.currentTime + 0.08);
     
     osc.connect(gain);
     gain.connect(this.ctx.destination);
     
-    // Higher up screen -> higher pitch
-    const baseFreq = 300 + (1 - yRatio) * 800 + (Math.random() * 100 - 50);
-    osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.4, this.ctx.currentTime + 0.15);
-    
+    // Very fast attack and decay for that percussive "pop"
+    const volume = Math.min(0.8, intensity * 0.15);
     gain.gain.setValueAtTime(0, this.ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(Math.min(0.2, intensity * 0.015), this.ctx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+    gain.gain.linearRampToValueAtTime(volume, this.ctx.currentTime + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08);
     
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.4);
+    osc.start(this.ctx.currentTime);
+    osc.stop(this.ctx.currentTime + 0.1);
   }
 }
 
@@ -102,14 +106,14 @@ const StaircaseWaterway: React.FC = () => {
   const isRecordingRef = useRef(isRecording);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const [bgColor, setBgColor] = useState('#9aa8b6');
+  const [bgColor, setBgColor] = useState('#97b5fd');
   
   useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
   
   // New controls
-  const [particleColor, setParticleColor] = useState('#fffaf5');
+  const [particleColor, setParticleColor] = useState('#fffaf6');
   const [trailLength, setTrailLength] = useState(11); // 1-100, maps to bg alpha
   const [blurAmount, setBlurAmount] = useState(1.5); // 0-5
   const [fallSpeed, setFallSpeed] = useState(2.2); // 0-5
@@ -117,11 +121,11 @@ const StaircaseWaterway: React.FC = () => {
   const [amplitude, setAmplitude] = useState(2.5); // 0-10
   
   // Rainboot controls
-  const [bootColor, setBootColor] = useState('#facc15');
+  const [bootColor, setBootColor] = useState('#ffd85c');
   const [bootSize, setBootSize] = useState(55);
-  const [splashColor, setSplashColor] = useState('#fedccd');
-  const [rippleColor, setRippleColor] = useState('#ffffff');
-  const [highlightColor, setHighlightColor] = useState('#ffdfc2');
+  const [splashColor, setSplashColor] = useState('#ffdce4');
+  const [rippleColor, setRippleColor] = useState('#f4f2ff');
+  const [highlightColor, setHighlightColor] = useState('#ffe8d6');
   const [isFalling, setIsFalling] = useState(true);
   const [isConfigVisible, setIsConfigVisible] = useState(false);
   const [slopeAngle, setSlopeAngle] = useState(1.5); // -5 to 5
@@ -130,6 +134,9 @@ const StaircaseWaterway: React.FC = () => {
   const [splashSize, setSplashSize] = useState(3.5); // 1-10
   const [splashRange, setSplashRange] = useState(14); // 5-50
   const [particleShape, setParticleShape] = useState('dot'); // 'dot', 'number', 'letter', 'text', 'leaf', 'petal'
+  const [resolution, setResolution] = useState('1080P'); // '720P' | '1080P'
+  const [aspectRatio, setAspectRatio] = useState('Fit Screen'); // 'A4', 'A3', '3:4', '4:3', '16:9', '9:16', '1:1', 'Fit Screen'
+  const [imageFormat, setImageFormat] = useState('PNG'); // 'PNG' | 'JPG'
 
   const bgColorRef = useRef(bgColor);
   const particleColorRef = useRef(particleColor);
@@ -147,6 +154,8 @@ const StaircaseWaterway: React.FC = () => {
   const splashSizeRef = useRef(splashSize);
   const splashRangeRef = useRef(splashRange);
   const particleShapeRef = useRef(particleShape);
+  const resolutionRef = useRef(resolution);
+  const aspectRatioRef = useRef(aspectRatio);
 
   useEffect(() => {
     bgColorRef.current = bgColor;
@@ -167,6 +176,8 @@ const StaircaseWaterway: React.FC = () => {
   useEffect(() => { splashSizeRef.current = splashSize; }, [splashSize]);
   useEffect(() => { splashRangeRef.current = splashRange; }, [splashRange]);
   useEffect(() => { particleShapeRef.current = particleShape; }, [particleShape]);
+  useEffect(() => { resolutionRef.current = resolution; }, [resolution]);
+  useEffect(() => { aspectRatioRef.current = aspectRatio; }, [aspectRatio]);
 
 
   useEffect(() => {
@@ -179,6 +190,12 @@ const StaircaseWaterway: React.FC = () => {
       let activeCircles: any[] = [];
       let activeThrows: any[] = [];
       let time = 0;
+      
+      // Spatial Hash Grid pool
+      let hashGrid: number[][] = [];
+      let hashGridLength = 0;
+      let hashGridCols = 0;
+      let hashGridRows = 0;
 
       const cstep = 20;
       const rstep = 50;
@@ -189,9 +206,9 @@ const StaircaseWaterway: React.FC = () => {
       const addCircle = (x: number, y: number) => {
         for (let i = 0; i < rings; i++) {
           activeCircles.push({
-            r: 20 * (i + 1) * (y / p.height),
+            r: 20 * (i + 1),
             pos: [x, y],
-            alpha: (1 - y / p.height) * 200 * (i + 1)
+            alpha: 200 - (i * 40)
           });
         }
       };
@@ -199,8 +216,8 @@ const StaircaseWaterway: React.FC = () => {
       const growCircle = (c: any) => {
         let { r, pos, alpha } = c;
         pos = [pos[0], pos[1]];
-        r = r + (rstep / 10) * (pos[1] / p.height) * Math.max(0.5, splashSizeRef.current * 0.25);
-        alpha -= (cstep / 10);
+        r = r + (rstep / 10) * Math.max(0.5, splashSizeRef.current * 0.25);
+        alpha -= 5;
         return { r, pos, alpha };
       };
 
@@ -213,10 +230,29 @@ const StaircaseWaterway: React.FC = () => {
       };
 
       const getDimensions = () => {
-        if (containerRef.current) {
-          return { w: containerRef.current.clientWidth, h: containerRef.current.clientHeight };
+        const res = resolutionRef.current;
+        const ar = aspectRatioRef.current;
+        
+        let containerW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth;
+        let containerH = containerRef.current ? containerRef.current.clientHeight : window.innerHeight;
+
+        if (ar === 'Fit Screen') {
+          return { w: containerW, h: containerH };
         }
-        return { w: window.innerWidth, h: window.innerHeight };
+
+        let longEdge = res === '1080P' ? 1920 : 1280;
+        let shortEdge = res === '1080P' ? 1080 : 720;
+        
+        switch(ar) {
+           case '16:9': return { w: longEdge, h: Math.round(longEdge * 9/16) };
+           case '9:16': return { w: Math.round(longEdge * 9/16), h: longEdge };
+           case '4:3': return { w: Math.round(shortEdge * 4/3), h: shortEdge };
+           case '3:4': return { w: shortEdge, h: Math.round(shortEdge * 4/3) };
+           case '1:1': return { w: shortEdge, h: shortEdge };
+           case 'A4': return { w: shortEdge, h: Math.round(shortEdge * 1.414) };
+           case 'A3': return { w: Math.round(shortEdge * 1.414), h: Math.round(shortEdge * 2) };
+           default: return { w: containerW, h: containerH };
+        }
       };
 
       const hexToRgb = (hex: string) => {
@@ -232,6 +268,33 @@ const StaircaseWaterway: React.FC = () => {
         const dim = getDimensions();
         p.createCanvas(dim.w, dim.h);
         p.noSmooth();
+        
+        // Remove any duplicate canvases generated by React Strict Mode
+        if (containerRef.current) {
+          const canvases = containerRef.current.querySelectorAll('canvas');
+          if (canvases.length > 1) {
+            for (let i = 0; i < canvases.length - 1; i++) {
+               canvases[i].remove();
+            }
+          }
+        }
+
+        const canvasE = containerRef.current?.querySelector('canvas');
+        if (canvasE) {
+           if (aspectRatioRef.current === 'Fit Screen') {
+             canvasE.style.width = '100%';
+             canvasE.style.height = '100%';
+             canvasE.style.maxWidth = 'none';
+             canvasE.style.maxHeight = 'none';
+             canvasE.style.objectFit = 'fill';
+           } else {
+             canvasE.style.width = '100%';
+             canvasE.style.height = '100%';
+             canvasE.style.maxWidth = '100%';
+             canvasE.style.maxHeight = '100%';
+             canvasE.style.objectFit = 'contain';
+           }
+        }
       };
 
       p.mousePressed = () => {
@@ -255,23 +318,43 @@ const StaircaseWaterway: React.FC = () => {
         }
       };
 
+      let lastAr = '';
+
       p.draw = () => {
         if (!isRecordingRef.current) {
           const dim = getDimensions();
-          if (p.width !== dim.w || p.height !== dim.h) {
+          if (p.width !== dim.w || p.height !== dim.h || lastAr !== aspectRatioRef.current) {
+            lastAr = aspectRatioRef.current;
             p.resizeCanvas(dim.w, dim.h);
             p.noSmooth();
+            const canvasE = containerRef.current?.querySelector('canvas');
+            if (canvasE) {
+               if (aspectRatioRef.current === 'Fit Screen') {
+                 canvasE.style.width = '100%';
+                 canvasE.style.height = '100%';
+                 canvasE.style.maxWidth = 'none';
+                 canvasE.style.maxHeight = 'none';
+                 canvasE.style.objectFit = 'fill';
+               } else {
+                 canvasE.style.width = '100%';
+                 canvasE.style.height = '100%';
+                 canvasE.style.maxWidth = '100%';
+                 canvasE.style.maxHeight = '100%';
+                 canvasE.style.objectFit = 'contain';
+               }
+            }
           }
         }
 
         // Background with slight fading and blur,
         // so trails remain visible and look like flowing water.
         const bgRgb = hexToRgb(bgColorRef.current);
-        const trailAlpha = p.map(trailLengthRef.current, 1, 100, 50, 1);
+        // Map 1-100 logically: 1 = fast clear (255), 100 = huge trails (2)
+        const trailAlpha = p.map(trailLengthRef.current, 1, 100, 255, 2);
         p.background(bgRgb.r, bgRgb.g, bgRgb.b, trailAlpha);
         
         if (blurAmountRef.current > 0) {
-          p.filter(p.BLUR, blurAmountRef.current); 
+          // Blur filter disabled for performance. Alpha trails handle motion blur nicely standalone.
         }
 
         // Moved stroke color directly to particle render loop to allow dynamic opacity/color per layer
@@ -318,7 +401,7 @@ const StaircaseWaterway: React.FC = () => {
             } else if (particleShapeRef.current === 'letter') {
               shapeVal = String.fromCharCode(p.floor(p.random(65, 91)));
             } else if (particleShapeRef.current === 'text') {
-              const chars = "天地玄黄宇宙洪荒日月盈昃辰宿列张寒来暑往秋收冬藏水雨云雪风霜冰露";
+              const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
               shapeVal = chars.charAt(p.floor(p.random(chars.length)));
             } else if (particleShapeRef.current === 'leaf') {
               shapeVal = p.random(['🍃', '🍁', '🍂', '🌿']);
@@ -349,7 +432,21 @@ const StaircaseWaterway: React.FC = () => {
         const cellSize = 30;
         const gridCols = Math.ceil(p.width / cellSize) + 2;
         const gridRows = Math.ceil(p.height / cellSize) + 2;
-        const grid: number[][] = new Array(gridCols * gridRows).fill(0).map(() => []);
+        const reqGridLength = gridCols * gridRows;
+        
+        if (hashGridLength !== reqGridLength) {
+          hashGrid = new Array(reqGridLength);
+          for (let i = 0; i < reqGridLength; i++) {
+            hashGrid[i] = [];
+          }
+          hashGridLength = reqGridLength;
+          hashGridCols = gridCols;
+          hashGridRows = gridRows;
+        } else {
+          for (let i = 0; i < reqGridLength; i++) {
+            hashGrid[i].length = 0; // fast clear without GC allocation
+          }
+        }
 
         for (let i = 0; i < particles.length; i++) {
           let pt = particles[i];
@@ -357,7 +454,7 @@ const StaircaseWaterway: React.FC = () => {
           let col = Math.floor(pt.x / cellSize);
           let row = Math.floor(pt.y / cellSize);
           if (col >= 0 && col < gridCols && row >= 0 && row < gridRows) {
-            grid[row * gridCols + col].push(i);
+            hashGrid[row * gridCols + col].push(i);
           }
         }
 
@@ -433,15 +530,22 @@ const StaircaseWaterway: React.FC = () => {
           // Physics interactions (collisions/merging)
           let colIdx = Math.floor(pt.x / cellSize);
           let rowIdx = Math.floor(pt.y / cellSize);
-          for (let r = Math.max(0, rowIdx - 1); r <= Math.min(gridRows - 1, rowIdx + 1); r++) {
-            for (let c = Math.max(0, colIdx - 1); c <= Math.min(gridCols - 1, colIdx + 1); c++) {
-              let cell = grid[r * gridCols + c];
+          let interactionChecks = 0;
+          for (let r = Math.max(0, rowIdx - 1); r <= Math.min(hashGridRows - 1, rowIdx + 1); r++) {
+            if (interactionChecks > 6) break;
+            for (let c = Math.max(0, colIdx - 1); c <= Math.min(hashGridCols - 1, colIdx + 1); c++) {
+              if (interactionChecks > 6) break;
+              let cell = hashGrid[r * hashGridCols + c];
               if (!cell) continue;
               for (let i = 0; i < cell.length; i++) {
+                if (interactionChecks > 6) break;
+                
                 let neighborIdx = cell[i];
                 if (neighborIdx <= idx) continue; // Check forward only (avoid duplicating interactions)
                 let n = particles[neighborIdx];
                 if (!n || n.s <= 0) continue;
+                
+                interactionChecks++;
                 
                 let dist = p.dist(pt.x, pt.y, n.x, n.y);
                 let minDist = (pt.s + n.s) * 0.4;
@@ -478,10 +582,10 @@ const StaircaseWaterway: React.FC = () => {
           const highlightColP = hexToRgb(highlightColorRef.current);
           if (!isComplex) {
             p.push();
-            let drawX = Math.floor(pt.x / 4) * 4;
-            let drawY = Math.floor(pt.y / 4) * 4;
-            let drawS = Math.max(4, Math.floor(pt.s * 2.5 / 4) * 4);
-            let coreS = Math.max(4, Math.floor(pt.s / 4) * 4);
+            let drawX = pt.x;
+            let drawY = pt.y;
+            let drawS = Math.max(4, pt.s * 2.5);
+            let coreS = Math.max(4, pt.s);
             
             p.rectMode(p.CENTER);
             p.noStroke();
@@ -504,8 +608,8 @@ const StaircaseWaterway: React.FC = () => {
             p.textSize(tSize);
             p.textAlign(p.CENTER, p.CENTER);
 
-            let drawX = Math.floor(pt.x / 4) * 4;
-            let drawY = Math.floor(pt.y / 4) * 4;
+            let drawX = pt.x;
+            let drawY = pt.y;
             
             if (isSymbol) {
               p.translate(drawX, drawY);
@@ -552,8 +656,8 @@ const StaircaseWaterway: React.FC = () => {
           let ix = t.pos[0] + t.xstep * progress;
           let iy = t.pos[1] - t.ystep * Math.sin(progress * Math.PI); // parabolic arc
           
-          let drawX = Math.floor(ix / 4) * 4;
-          let drawY = Math.floor(iy / 4) * 4;
+          let drawX = ix;
+          let drawY = iy;
 
           p.push();
           p.noStroke();
@@ -572,10 +676,10 @@ const StaircaseWaterway: React.FC = () => {
         while(n--) {
           let c = activeCircles.pop();
           
-          let drawX = Math.floor(c.pos[0] / 4) * 4;
-          let drawY = Math.floor(c.pos[1] / 4) * 4;
-          let drawW = Math.floor(c.r / 4) * 4;
-          let drawH = Math.floor((c.r / 2 * (c.pos[1] / p.height)) / 4) * 4;
+          let drawX = c.pos[0];
+          let drawY = c.pos[1];
+          let drawW = c.r;
+          let drawH = c.r / 2 * (c.pos[1] / p.height);
 
           p.push();
           p.noFill();
@@ -605,10 +709,17 @@ const StaircaseWaterway: React.FC = () => {
       };
     };
 
+    if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+    }
+    
     myP5 = new p5(sketch, containerRef.current);
 
     return () => {
       myP5.remove();
+      if (containerRef.current) {
+          containerRef.current.innerHTML = ''; // Ensure canvas is removed
+      }
       synth.updateAmbient(0, 0);
       if (synth.ctx) {
          try { synth.ctx.suspend(); } catch (e) {}
@@ -637,14 +748,10 @@ const StaircaseWaterway: React.FC = () => {
           // Use a high bitrate for HD quality
           let options: MediaRecorderOptions = { videoBitsPerSecond: 8000000 };
           if (typeof MediaRecorder.isTypeSupported === 'function') {
-            if (MediaRecorder.isTypeSupported('video/mp4; codecs="avc1.42E01E"')) {
-              options = { mimeType: 'video/mp4; codecs="avc1.42E01E"', videoBitsPerSecond: 8000000 };
-            } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-              options = { mimeType: 'video/mp4', videoBitsPerSecond: 8000000 };
+            if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
+              options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
             } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
               options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 8000000 };
-            } else if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
-              options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
             } else if (MediaRecorder.isTypeSupported('video/webm')) {
               options = { mimeType: 'video/webm', videoBitsPerSecond: 8000000 };
             }
@@ -684,6 +791,21 @@ const StaircaseWaterway: React.FC = () => {
     }
   };
 
+  const exportImage = () => {
+    setIsConfigVisible(false);
+    setTimeout(() => {
+        const canvas = containerRef.current?.querySelector('canvas');
+        if (canvas) {
+            const dataUrl = canvas.toDataURL(imageFormat === 'JPG' ? 'image/jpeg' : 'image/png', 1.0);
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            const ext = imageFormat === 'JPG' ? 'jpg' : 'png';
+            a.download = `waterway-export-${Date.now()}.${ext}`;
+            a.click();
+        }
+    }, 600);
+  };
+
   const bootSvgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${bootSize}" height="${bootSize}" viewBox="0 0 32 32" shape-rendering="crispEdges"><g transform="translate(0, 4)"><path fill="${encodeURIComponent(bootColor)}" d="M9,3 v12 c0,0 -1,2 -1,3 c0,1 1,2 2,2 h8 c1.5,0 2,-1 2,-2 c0,-1 -0.5,-2 -2,-2 h-3.5 l-0.5,-1 v-12 z" /><rect x="8" y="2" width="7" height="3" rx="0" fill="%23ffffff" opacity="0.3" /><path fill="%2327272a" d="M7.5,20 h11.5 v1 h-11.5 v-1 z" /></g><g transform="translate(10, 0)"><path fill="${encodeURIComponent(bootColor)}" d="M9,3 v12 c0,0 -1,2 -1,3 c0,1 1,2 2,2 h8 c1.5,0 2,-1 2,-2 c0,-1 -0.5,-2 -2,-2 h-3.5 l-0.5,-1 v-12 z" /><rect x="8" y="2" width="7" height="3" rx="0" fill="%23ffffff" opacity="0.3" /><path fill="%2327272a" d="M7.5,20 h11.5 v1 h-11.5 v-1 z" /></g></svg>`;
 
   return (
@@ -691,10 +813,8 @@ const StaircaseWaterway: React.FC = () => {
       {/* Canvas Container */}
       <div 
         ref={containerRef} 
-        className="absolute top-0 left-0 h-full overflow-hidden transition-all duration-500 ease-in-out" 
+        className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center overflow-hidden" 
         style={{
-          width: isConfigVisible ? 'calc(100% - 340px)' : '100%',
-          backgroundColor: bgColor,
           cursor: `url('${bootSvgUrl}') ${Math.round(bootSize / 2)} ${Math.round(bootSize * 0.8)}, auto`
         }}
       />
@@ -754,12 +874,12 @@ const StaircaseWaterway: React.FC = () => {
                 {isRecording ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                    结束录制
+                    Stop Recording
                   </>
                 ) : (
                   <>
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-                    开始录制
+                    Start Recording
                   </>
                 )}
               </button>
@@ -795,7 +915,7 @@ const StaircaseWaterway: React.FC = () => {
               className="w-full bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30 font-medium py-2.5 px-4 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-              一键数值预设
+              Quick Presets
             </button>
 
             <div className="space-y-6">
@@ -803,7 +923,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Background Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    主背景色
+                    Background Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -818,7 +938,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Particle Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    粒子颗粒
+                    Particle Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -833,7 +953,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Boot Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    雨靴颜色
+                    Rainboot Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -848,7 +968,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Splash Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    水花颜色
+                    Splash Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -863,7 +983,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Ripple Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    水面反光
+                    Ripple Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -878,7 +998,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Highlight Color Picker */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    光晕高光
+                    Highlight Color
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -893,7 +1013,7 @@ const StaircaseWaterway: React.FC = () => {
                 {/* Boot Size Picker */}
                 <div className="space-y-2 col-span-2">
                   <label className="text-sm font-medium text-zinc-300">
-                    雨靴大小 ({bootSize}px)
+                    Rainboot Size ({bootSize}px)
                   </label>
                   <div className="flex items-center gap-2 mt-2">
                     <input
@@ -989,6 +1109,79 @@ const StaircaseWaterway: React.FC = () => {
               </div>
               <input type="range" min="5" max="50" step="1" value={splashRange} onChange={e => setSplashRange(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
             </div>
+          </div>
+          
+          {/* Export Settings */}
+          <div className="space-y-4 pt-6 border-t border-white/5">
+            <h3 className="text-white font-medium">Export & Recording Settings</h3>
+            
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-zinc-300">Resolution</label>
+              <div className="flex bg-zinc-800 rounded-lg p-1">
+                {['720P', '1080P'].map(res => (
+                  <button
+                    key={res}
+                    onClick={() => setResolution(res)}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      resolution === res ? 'bg-zinc-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {res}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-zinc-300">Image Format</label>
+              <div className="flex bg-zinc-800 rounded-lg p-1">
+                {['PNG', 'JPG'].map(fmt => (
+                  <button
+                    key={fmt}
+                    onClick={() => setImageFormat(fmt)}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      imageFormat === fmt ? 'bg-zinc-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {fmt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-zinc-300">Aspect Ratio (Dimensions)</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Fit Screen', value: 'Fit Screen' },
+                  { label: '16:9', value: '16:9' },
+                  { label: '9:16', value: '9:16' },
+                  { label: '4:3', value: '4:3' },
+                  { label: '3:4', value: '3:4' },
+                  { label: '1:1', value: '1:1' },
+                  { label: 'A4', value: 'A4' },
+                  { label: 'A3', value: 'A3' }
+                ].map(ar => (
+                  <button
+                    key={ar.value}
+                    onClick={() => setAspectRatio(ar.value)}
+                    className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
+                      aspectRatio === ar.value ? 'bg-white text-black shadow' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                    }`}
+                  >
+                    {ar.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={exportImage}
+              className="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-2 px-4 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 mt-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              Export Image
+            </button>
           </div>
           
           {/* Particle Shape Selector */}
