@@ -127,7 +127,6 @@ const StaircaseWaterway: React.FC = () => {
   const [rippleColor, setRippleColor] = useState('#f4f2ff');
   const [highlightColor, setHighlightColor] = useState('#ffe8d6');
   const [isFalling, setIsFalling] = useState(true);
-  const [isConfigVisible, setIsConfigVisible] = useState(false);
   const [slopeAngle, setSlopeAngle] = useState(1.5); // -5 to 5
   
   const [particleSize, setParticleSize] = useState(3.5); // 1-10
@@ -137,6 +136,7 @@ const StaircaseWaterway: React.FC = () => {
   const [resolution, setResolution] = useState('1080P'); // '720P' | '1080P'
   const [aspectRatio, setAspectRatio] = useState('Fit Screen'); // 'A4', 'A3', '3:4', '4:3', '16:9', '9:16', '1:1', 'Fit Screen'
   const [imageFormat, setImageFormat] = useState('PNG'); // 'PNG' | 'JPG'
+  const [hasStarted, setHasStarted] = useState(false);
 
   const bgColorRef = useRef(bgColor);
   const particleColorRef = useRef(particleColor);
@@ -150,6 +150,7 @@ const StaircaseWaterway: React.FC = () => {
   const amplitudeRef = useRef(amplitude);
   const isFallingRef = useRef(isFalling);
   const slopeAngleRef = useRef(slopeAngle);
+  const hasStartedRef = useRef(hasStarted);
   const particleSizeRef = useRef(particleSize);
   const splashSizeRef = useRef(splashSize);
   const splashRangeRef = useRef(splashRange);
@@ -172,6 +173,7 @@ const StaircaseWaterway: React.FC = () => {
   useEffect(() => { amplitudeRef.current = amplitude; }, [amplitude]);
   useEffect(() => { isFallingRef.current = isFalling; }, [isFalling]);
   useEffect(() => { slopeAngleRef.current = slopeAngle; }, [slopeAngle]);
+  useEffect(() => { hasStartedRef.current = hasStarted; }, [hasStarted]);
   useEffect(() => { particleSizeRef.current = particleSize; }, [particleSize]);
   useEffect(() => { splashSizeRef.current = splashSize; }, [splashSize]);
   useEffect(() => { splashRangeRef.current = splashRange; }, [splashRange]);
@@ -298,10 +300,9 @@ const StaircaseWaterway: React.FC = () => {
       };
 
       p.mousePressed = () => {
+        if (!hasStartedRef.current) return;
         if (p.mouseX >= 0 && p.mouseX <= p.width && p.mouseY >= 0 && p.mouseY <= p.height) {
           synth.init();
-          
-          if (activeThrows.length > 5) return; // limit active throws
           
           let yFactor = Math.max(0.1, p.mouseY / p.height);
           
@@ -635,12 +636,15 @@ const StaircaseWaterway: React.FC = () => {
         // --- Ripples update & render loop ---
         let fcm = p.frameCount % tbounce;
         if (fcm === 1) {
-          let k = activeThrows.length;
-          while(k--) {
-            let t = activeThrows.pop();
+          for (let i = activeThrows.length - 1; i >= 0; i--) {
+            let t = activeThrows[i];
             t = bounce(t);
             addCircle(t.pos[0], t.pos[1]);
-            if (t.b < t.bounces) activeThrows.unshift(t);
+            if (t.b >= t.bounces) {
+              activeThrows.splice(i, 1);
+            } else {
+              activeThrows[i] = t;
+            }
           }
         }
 
@@ -671,10 +675,9 @@ const StaircaseWaterway: React.FC = () => {
           p.pop();
         }
 
-        let n = activeCircles.length;
         const pCol = hexToRgb(particleColorRef.current);
-        while(n--) {
-          let c = activeCircles.pop();
+        for (let i = activeCircles.length - 1; i >= 0; i--) {
+          let c = activeCircles[i];
           
           let drawX = c.pos[0];
           let drawY = c.pos[1];
@@ -695,7 +698,11 @@ const StaircaseWaterway: React.FC = () => {
           p.pop();
           
           c = growCircle(c);
-          if (c.r < rlim && c.alpha > 0) activeCircles.unshift(c);
+          if (c.r >= rlim || c.alpha <= 0) {
+            activeCircles.splice(i, 1);
+          } else {
+            activeCircles[i] = c;
+          }
         }
 
         // Update ambient sound based on particle density and fall speed
@@ -727,494 +734,69 @@ const StaircaseWaterway: React.FC = () => {
     };
   }, []);
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-    } else {
-      setIsConfigVisible(false); // Hide panel first
-      setTimeout(() => { // Wait for panel to finish sliding out
-        const canvas = containerRef.current?.querySelector('canvas');
-        if (!canvas || !('captureStream' in canvas)) {
-          alert("Recording is not supported in this browser.");
-          return;
-        }
-
-        try {
-          const stream = (canvas as HTMLCanvasElement).captureStream(60);
-          
-          // Use a high bitrate for HD quality
-          let options: MediaRecorderOptions = { videoBitsPerSecond: 8000000 };
-          if (typeof MediaRecorder.isTypeSupported === 'function') {
-            if (MediaRecorder.isTypeSupported('video/webm; codecs=vp9')) {
-              options = { mimeType: 'video/webm; codecs=vp9', videoBitsPerSecond: 8000000 };
-            } else if (MediaRecorder.isTypeSupported('video/webm; codecs=h264')) {
-              options = { mimeType: 'video/webm; codecs=h264', videoBitsPerSecond: 8000000 };
-            } else if (MediaRecorder.isTypeSupported('video/webm')) {
-              options = { mimeType: 'video/webm', videoBitsPerSecond: 8000000 };
-            }
-          }
-
-          const mediaRecorder = new MediaRecorder(stream, options);
-          mediaRecorderRef.current = mediaRecorder;
-          chunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) {
-              chunksRef.current.push(e.data);
-            }
-          };
-
-          mediaRecorder.onstop = () => {
-            const blob = new Blob(chunksRef.current, { type: options.mimeType || 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            document.body.appendChild(a);
-            a.style.display = 'none';
-            a.href = url;
-            const extension = (options.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
-            a.download = `waterway-recording-${Date.now()}.${extension}`;
-            a.click();
-            window.URL.revokeObjectURL(url);
-            a.remove();
-          };
-
-          mediaRecorder.start();
-          setIsRecording(true);
-        } catch (e) {
-          console.error("Recording failed", e);
-          alert("Recording failed to start.");
-        }
-      }, 600); // 500ms for layout transition + 100ms safe margin
-    }
-  };
-
-  const exportImage = () => {
-    setIsConfigVisible(false);
-    setTimeout(() => {
-        const canvas = containerRef.current?.querySelector('canvas');
-        if (canvas) {
-            const dataUrl = canvas.toDataURL(imageFormat === 'JPG' ? 'image/jpeg' : 'image/png', 1.0);
-            const a = document.createElement('a');
-            a.href = dataUrl;
-            const ext = imageFormat === 'JPG' ? 'jpg' : 'png';
-            a.download = `waterway-export-${Date.now()}.${ext}`;
-            a.click();
-        }
-    }, 600);
-  };
-
   const bootSvgUrl = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${bootSize}" height="${bootSize}" viewBox="0 0 32 32" shape-rendering="crispEdges"><g transform="translate(0, 4)"><path fill="${encodeURIComponent(bootColor)}" d="M9,3 v12 c0,0 -1,2 -1,3 c0,1 1,2 2,2 h8 c1.5,0 2,-1 2,-2 c0,-1 -0.5,-2 -2,-2 h-3.5 l-0.5,-1 v-12 z" /><rect x="8" y="2" width="7" height="3" rx="0" fill="%23ffffff" opacity="0.3" /><path fill="%2327272a" d="M7.5,20 h11.5 v1 h-11.5 v-1 z" /></g><g transform="translate(10, 0)"><path fill="${encodeURIComponent(bootColor)}" d="M9,3 v12 c0,0 -1,2 -1,3 c0,1 1,2 2,2 h8 c1.5,0 2,-1 2,-2 c0,-1 -0.5,-2 -2,-2 h-3.5 l-0.5,-1 v-12 z" /><rect x="8" y="2" width="7" height="3" rx="0" fill="%23ffffff" opacity="0.3" /><path fill="%2327272a" d="M7.5,20 h11.5 v1 h-11.5 v-1 z" /></g></svg>`;
 
   return (
-    <div ref={wrapperRef} className="relative w-full h-screen overflow-hidden bg-zinc-950">
+    <div ref={wrapperRef} className="relative w-full h-screen overflow-hidden bg-zinc-950 select-none">
       {/* Canvas Container */}
       <div 
         ref={containerRef} 
-        className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center overflow-hidden" 
+        className="absolute top-0 left-0 w-full h-full flex flex-col items-center justify-center overflow-hidden touch-none" 
         style={{
           cursor: `url('${bootSvgUrl}') ${Math.round(bootSize / 2)} ${Math.round(bootSize * 0.8)}, auto`
         }}
       />
 
-      {/* Floating Trigger Bar */}
-      <motion.div
-        drag
-        dragMomentum={false}
-        dragConstraints={wrapperRef}
-        dragElastic={0}
-        className="fixed z-[100] cursor-grab active:cursor-grabbing flex flex-col items-center justify-center pointer-events-auto"
-        initial={{ right: 0, top: '50%', y: '-50%' }}
-        style={{ position: 'fixed' }}
-      >
-        <button
-          onClick={() => setIsConfigVisible(!isConfigVisible)}
-          className={`bg-white/10 backdrop-blur-md border border-white/20 py-4 px-1.5 shadow-xl text-white hover:bg-white/20 transition-all flex items-center justify-center opacity-100 rounded-l-xl border-r-0`}
-          style={{ width: '28px', height: '60px' }}
+{/* Intro Screen */}
+    {!hasStarted && (
+      <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-white/40 backdrop-blur-md">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white/60 backdrop-blur-xl border border-white/60 p-10 md:p-12 rounded-3xl shadow-2xl max-w-md w-full mx-4 text-center"
         >
-          {isConfigVisible ? (
-             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          ) : (
-             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-          )}
-        </button>
-      </motion.div>
-
-      {/* Sliding Control Panel */}
-      <div 
-        className={`absolute top-0 h-full z-50 w-[340px] bg-zinc-900 border-l border-white/10 shadow-2xl transition-all duration-500 ease-in-out ${
-          isConfigVisible ? 'right-0' : '-right-[340px]'
-        }`}
-      >
-        <div className="w-full h-full overflow-y-auto overflow-x-hidden p-6 custom-scrollbar">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-white font-medium text-lg mb-1">Configuration</h2>
-              <p className="text-zinc-400 text-sm">Customize the particle simulation.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setIsFalling(!isFalling)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  isFalling ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30' : 'bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30'
-                }`}
-              >
-                {isFalling ? 'Stop' : 'Start'}
-              </button>
-              <button 
-                onClick={toggleRecording}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                  isRecording 
-                    ? 'bg-red-500/20 text-red-500 hover:bg-red-500/30 animate-pulse' 
-                    : 'bg-zinc-700/50 text-white hover:bg-zinc-700'
-                }`}
-              >
-                {isRecording ? (
-                  <>
-                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                    Stop Recording
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-                    Start Recording
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => setIsConfigVisible(false)}
-                className="text-zinc-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full p-1.5"
-                title="Close panel"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-              </button>
-            </div>
-          </div>
-
-            <button
-              onClick={() => {
-                setBgColor('#9aa8b6'); // 154, 168, 182
-                setParticleColor('#fffaf5'); // 255, 250, 245
-                setBootColor('#facc15'); // 250, 204, 21
-                setSplashColor('#fedccd'); // 254, 220, 205
-                setRippleColor('#ffffff'); // 255, 255, 255
-                setHighlightColor('#ffdfc2'); // 255, 223, 194
-                setBootSize(55);
-                setSlopeAngle(1.5);
-                setTrailLength(11);
-                setBlurAmount(1.5);
-                setFallSpeed(2.2);
-                setGravityAcc(1.75);
-                setAmplitude(2.5);
-                setParticleSize(3.5);
-                setSplashSize(3.5);
-                setSplashRange(14);
-              }}
-              className="w-full bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30 font-medium py-2.5 px-4 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-              Quick Presets
-            </button>
-
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                {/* Background Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Background Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={bgColor}
-                      onChange={(e) => setBgColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Particle Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Particle Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={particleColor}
-                      onChange={(e) => setParticleColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Boot Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Rainboot Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={bootColor}
-                      onChange={(e) => setBootColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Splash Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Splash Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={splashColor}
-                      onChange={(e) => setSplashColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Ripple Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Ripple Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={rippleColor}
-                      onChange={(e) => setRippleColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Highlight Color Picker */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Highlight Color
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={highlightColor}
-                      onChange={(e) => setHighlightColor(e.target.value)}
-                      className="w-8 h-8 border-0 p-0 bg-transparent rounded-lg cursor-pointer shrink-0"
-                    />
-                  </div>
-                </div>
-
-                {/* Boot Size Picker */}
-                <div className="space-y-2 col-span-2">
-                  <label className="text-sm font-medium text-zinc-300">
-                    Rainboot Size ({bootSize}px)
-                  </label>
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      type="range"
-                      min="24"
-                      max="64"
-                      value={bootSize}
-                      onChange={(e) => setBootSize(Number(e.target.value))}
-                      className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-
-          <div className="space-y-4">
-            {/* Slope Angle Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Slope Direction</label>
-                <span className="text-xs font-mono text-zinc-500">{slopeAngle}</span>
-              </div>
-              <input type="range" min="-5" max="5" step="0.5" value={slopeAngle} onChange={e => setSlopeAngle(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Trail Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Trail Length</label>
-                <span className="text-xs font-mono text-zinc-500">{trailLength}%</span>
-              </div>
-              <input type="range" min="1" max="100" value={trailLength} onChange={e => setTrailLength(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Blur Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Blur Amount</label>
-                <span className="text-xs font-mono text-zinc-500">{blurAmount}</span>
-              </div>
-              <input type="range" min="0" max="5" step="0.5" value={blurAmount} onChange={e => setBlurAmount(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Fall Speed Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Base Speed</label>
-                <span className="text-xs font-mono text-zinc-500">{fallSpeed}</span>
-              </div>
-              <input type="range" min="0" max="5" step="0.1" value={fallSpeed} onChange={e => setFallSpeed(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Gravity Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Gravity</label>
-                <span className="text-xs font-mono text-zinc-500">{gravityAcc}</span>
-              </div>
-              <input type="range" min="0" max="2" step="0.05" value={gravityAcc} onChange={e => setGravityAcc(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Amplitude Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Amplitude</label>
-                <span className="text-xs font-mono text-zinc-500">{amplitude}</span>
-              </div>
-              <input type="range" min="0" max="10" step="0.1" value={amplitude} onChange={e => setAmplitude(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Particle Size Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Particle Size</label>
-                <span className="text-xs font-mono text-zinc-500">{particleSize}</span>
-              </div>
-              <input type="range" min="1" max="10" step="0.5" value={particleSize} onChange={e => setParticleSize(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Splash Size Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Ripple Size</label>
-                <span className="text-xs font-mono text-zinc-500">{splashSize}</span>
-              </div>
-              <input type="range" min="1" max="10" step="0.5" value={splashSize} onChange={e => setSplashSize(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-
-            {/* Splash Range Slider */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center text-sm font-medium text-zinc-300">
-                <label>Throw Power</label>
-                <span className="text-xs font-mono text-zinc-500">{splashRange}</span>
-              </div>
-              <input type="range" min="5" max="50" step="1" value={splashRange} onChange={e => setSplashRange(Number(e.target.value))} className="w-full accent-white h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer" />
-            </div>
-          </div>
+          <h1 className="text-3xl md:text-4xl font-serif text-zinc-900 mb-3 tracking-tight">Rain Memory</h1>
+          <p className="text-zinc-600 text-lg mb-8 font-light italic">The rain remembers every touch.</p>
           
-          {/* Export Settings */}
-          <div className="space-y-4 pt-6 border-t border-white/5">
-            <h3 className="text-white font-medium">Export & Recording Settings</h3>
+          <div className="space-y-6 text-left mb-10">
+            <div className="flex items-start gap-4">
+              <span className="text-2xl mt-1">💧</span>
+              <div>
+                <h3 className="text-zinc-900 font-medium mb-1">Click the screen</h3>
+                <p className="text-zinc-600 text-sm">Let raindrops fall and create ripples.</p>
+              </div>
+            </div>
             
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-zinc-300">Resolution</label>
-              <div className="flex bg-zinc-800 rounded-lg p-1">
-                {['720P', '1080P'].map(res => (
-                  <button
-                    key={res}
-                    onClick={() => setResolution(res)}
-                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      resolution === res ? 'bg-zinc-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {res}
-                  </button>
-                ))}
+            <div className="flex items-start gap-4">
+              <span className="text-2xl mt-1">🥾</span>
+              <div>
+                <h3 className="text-zinc-900 font-medium mb-1">Move your cursor</h3>
+                <p className="text-zinc-600 text-sm">Your cursor becomes a rain boot, leaving traces on the water.</p>
               </div>
             </div>
-
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-zinc-300">Image Format</label>
-              <div className="flex bg-zinc-800 rounded-lg p-1">
-                {['PNG', 'JPG'].map(fmt => (
-                  <button
-                    key={fmt}
-                    onClick={() => setImageFormat(fmt)}
-                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      imageFormat === fmt ? 'bg-zinc-600 text-white shadow' : 'text-zinc-400 hover:text-zinc-200'
-                    }`}
-                  >
-                    {fmt}
-                  </button>
-                ))}
+            
+            <div className="flex items-start gap-4">
+              <span className="text-2xl mt-1">🌊</span>
+              <div>
+                <h3 className="text-zinc-900 font-medium mb-1">Touch the surface</h3>
+                <p className="text-zinc-600 text-sm">Watch memories spread like waves.</p>
               </div>
             </div>
-
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-zinc-300">Aspect Ratio (Dimensions)</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Fit Screen', value: 'Fit Screen' },
-                  { label: '16:9', value: '16:9' },
-                  { label: '9:16', value: '9:16' },
-                  { label: '4:3', value: '4:3' },
-                  { label: '3:4', value: '3:4' },
-                  { label: '1:1', value: '1:1' },
-                  { label: 'A4', value: 'A4' },
-                  { label: 'A3', value: 'A3' }
-                ].map(ar => (
-                  <button
-                    key={ar.value}
-                    onClick={() => setAspectRatio(ar.value)}
-                    className={`py-1.5 px-2 text-xs font-medium rounded-lg transition-colors ${
-                      aspectRatio === ar.value ? 'bg-white text-black shadow' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                    }`}
-                  >
-                    {ar.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={exportImage}
-              className="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-medium py-2 px-4 rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 mt-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-              Export Image
-            </button>
           </div>
           
-          {/* Particle Shape Selector */}
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-zinc-300">
-              Particle Shape
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'dot', label: 'Dots' },
-                { id: 'number', label: 'Numbers' },
-                { id: 'letter', label: 'Letters' },
-                { id: 'text', label: 'Characters' },
-                { id: 'leaf', label: 'Leaves' },
-                { id: 'petal', label: 'Petals' }
-              ].map((shape) => (
-                <button
-                  key={shape.id}
-                  onClick={() => setParticleShape(shape.id)}
-                  className={`py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                    particleShape === shape.id
-                      ? 'bg-white text-black shadow-md scale-100'
-                      : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 scale-95 hover:scale-100'
-                  }`}
-                >
-                  {shape.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+          <button 
+            onClick={() => {
+              setHasStarted(true);
+              synth.init(); // Initialize audio context on first interaction
+            }}
+            className="w-full py-4 rounded-xl bg-zinc-900 text-white font-medium text-lg hover:bg-zinc-800 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
+          >
+            Start Experience
+          </button>
+        </motion.div>
       </div>
-    </div>
+    )}
+
   </div>
   );
 };
