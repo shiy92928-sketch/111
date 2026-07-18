@@ -137,6 +137,21 @@ const StaircaseWaterway: React.FC = () => {
   const [aspectRatio, setAspectRatio] = useState('Fit Screen'); // 'A4', 'A3', '3:4', '4:3', '16:9', '9:16', '1:1', 'Fit Screen'
   const [imageFormat, setImageFormat] = useState('PNG'); // 'PNG' | 'JPG'
   const [hasStarted, setHasStarted] = useState(false);
+  const [introConfig, setIntroConfig] = useState({
+    cardWidth: 800,
+    cardHeight: 542,
+    cardX: 0,
+    cardY: 0,
+    titleScale: 1,
+    titleX: 0,
+    titleY: 48,
+    contentScale: 1,
+    contentX: 153,
+    contentY: 40,
+    btnScale: 0.6,
+    btnX: 29,
+    btnY: -31,
+  });
 
   const bgColorRef = useRef(bgColor);
   const particleColorRef = useRef(particleColor);
@@ -749,50 +764,85 @@ const StaircaseWaterway: React.FC = () => {
 
 {/* Intro Screen */}
     {!hasStarted && (
-      <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-white/40 backdrop-blur-md">
-        <motion.div 
+      <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-white/40 backdrop-blur-md overflow-hidden">
+        
+                <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white/60 backdrop-blur-xl border border-white/60 p-10 md:p-12 rounded-3xl shadow-2xl max-w-md w-full mx-4 text-center"
+          className="p-10 md:p-12 rounded-3xl mx-4 text-center overflow-hidden flex flex-col relative"
+          style={{ 
+            backgroundImage: "url('https://raw.githubusercontent.com/shiy92928-sketch/picture/main/%E7%95%8C%E9%9D%A24.png')",
+            backgroundSize: '100% 100%',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            width: `${introConfig.cardWidth}px`,
+            height: `${introConfig.cardHeight}px`,
+            maxWidth: '100%',
+            transform: `translate(${introConfig.cardX}px, ${introConfig.cardY}px)`
+          }}
         >
-          <h1 className="text-3xl md:text-4xl font-serif text-zinc-900 mb-3 tracking-tight">Rain Memory</h1>
-          <p className="text-zinc-600 text-lg mb-8 font-light italic">The rain remembers every touch.</p>
-          
-          <div className="space-y-6 text-left mb-10">
-            <div className="flex items-start gap-4">
-              <span className="text-2xl mt-1">💧</span>
-              <div>
-                <h3 className="text-zinc-900 font-medium mb-1">Click the screen</h3>
-                <p className="text-zinc-600 text-sm">Let raindrops fall and create ripples.</p>
-              </div>
+          <div className="flex-1 flex flex-col relative w-full">
+            <div 
+               style={{
+                 transform: `translate(${introConfig.titleX}px, ${introConfig.titleY}px) scale(${introConfig.titleScale})`,
+                 transformOrigin: 'top center'
+               }}
+            >
+              <h1 className="text-3xl md:text-4xl font-serif text-zinc-900 mb-3 tracking-tight">Rain Memory</h1>
+              <p className="text-zinc-600 text-lg mb-8 font-light italic">The rain remembers every touch.</p>
             </div>
             
-            <div className="flex items-start gap-4">
-              <span className="text-2xl mt-1">🥾</span>
-              <div>
-                <h3 className="text-zinc-900 font-medium mb-1">Move your cursor</h3>
-                <p className="text-zinc-600 text-sm">Your cursor becomes a rain boot, leaving traces on the water.</p>
+            <div 
+               className="space-y-6 text-left flex-1"
+               style={{
+                 transform: `translate(${introConfig.contentX}px, ${introConfig.contentY}px) scale(${introConfig.contentScale})`,
+                 transformOrigin: 'center'
+               }}
+            >
+              <div className="flex items-start gap-4">
+                <span className="text-2xl mt-1">💧</span>
+                <div>
+                  <h3 className="text-zinc-900 font-medium mb-1">Click the screen</h3>
+                  <p className="text-zinc-600 text-sm">Let raindrops fall and create ripples.</p>
+                </div>
               </div>
-            </div>
-            
-            <div className="flex items-start gap-4">
-              <span className="text-2xl mt-1">🌊</span>
-              <div>
-                <h3 className="text-zinc-900 font-medium mb-1">Touch the surface</h3>
-                <p className="text-zinc-600 text-sm">Watch memories spread like waves.</p>
+              
+              <div className="flex items-start gap-4">
+                <span className="text-2xl mt-1">🥾</span>
+                <div>
+                  <h3 className="text-zinc-900 font-medium mb-1">Move your cursor</h3>
+                  <p className="text-zinc-600 text-sm">Your cursor becomes a rain boot, leaving traces on the water.</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-4">
+                <span className="text-2xl mt-1">🌊</span>
+                <div>
+                  <h3 className="text-zinc-900 font-medium mb-1">Touch the surface</h3>
+                  <p className="text-zinc-600 text-sm">Watch memories spread like waves.</p>
+                </div>
               </div>
             </div>
           </div>
           
-          <button 
-            onClick={() => {
-              setHasStarted(true);
-              synth.init(); // Initialize audio context on first interaction
-            }}
-            className="w-full py-4 rounded-xl bg-zinc-900 text-white font-medium text-lg hover:bg-zinc-800 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg"
+          <div
+             style={{
+               transform: `translate(${introConfig.btnX}px, ${introConfig.btnY}px) scale(${introConfig.btnScale})`,
+               transformOrigin: 'bottom center',
+               width: '100%',
+               marginTop: 'auto'
+             }}
           >
-            Start Experience
-          </button>
+            <button 
+              onClick={() => {
+                setHasStarted(true);
+                synth.init(); // Initialize audio context on first interaction
+              }}
+              className="w-full py-4 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 shadow-xl text-zinc-900 font-medium text-lg hover:bg-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              Start Experience
+            </button>
+          </div>
         </motion.div>
       </div>
     )}
