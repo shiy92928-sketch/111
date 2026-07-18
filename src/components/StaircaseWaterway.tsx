@@ -788,8 +788,8 @@ const StaircaseWaterway: React.FC = () => {
                  transformOrigin: 'top center'
                }}
             >
-              <h1 className="text-3xl md:text-4xl font-serif text-zinc-900 mb-3 tracking-tight">Rain Memory</h1>
-              <p className="text-zinc-600 text-lg mb-8 font-light italic">The rain remembers every touch.</p>
+              <h1 className="text-3xl md:text-4xl font-pixel font-bold text-zinc-900 mb-3 tracking-tight">Rain Memory</h1>
+              <p className="font-pixel text-zinc-600 text-lg mb-8">The rain remembers every touch.</p>
             </div>
             
             <div 
@@ -802,24 +802,24 @@ const StaircaseWaterway: React.FC = () => {
               <div className="flex items-start gap-4">
                 <span className="text-2xl mt-1">💧</span>
                 <div>
-                  <h3 className="text-zinc-900 font-medium mb-1">Click the screen</h3>
-                  <p className="text-zinc-600 text-sm">Let raindrops fall and create ripples.</p>
+                  <h3 className="text-zinc-900 font-pixel font-bold mb-1">Click the screen</h3>
+                  <p className="text-zinc-600 font-pixel text-sm">Let raindrops fall and create ripples.</p>
                 </div>
               </div>
               
               <div className="flex items-start gap-4">
                 <span className="text-2xl mt-1">🥾</span>
                 <div>
-                  <h3 className="text-zinc-900 font-medium mb-1">Move your cursor</h3>
-                  <p className="text-zinc-600 text-sm">Your cursor becomes a rain boot, leaving traces on the water.</p>
+                  <h3 className="text-zinc-900 font-pixel font-bold mb-1">Move your cursor</h3>
+                  <p className="text-zinc-600 font-pixel text-sm">Your cursor becomes a rain boot, leaving traces on the water.</p>
                 </div>
               </div>
               
               <div className="flex items-start gap-4">
                 <span className="text-2xl mt-1">🌊</span>
                 <div>
-                  <h3 className="text-zinc-900 font-medium mb-1">Touch the surface</h3>
-                  <p className="text-zinc-600 text-sm">Watch memories spread like waves.</p>
+                  <h3 className="text-zinc-900 font-pixel font-bold mb-1">Touch the surface</h3>
+                  <p className="text-zinc-600 font-pixel text-sm">Watch memories spread like waves.</p>
                 </div>
               </div>
             </div>
@@ -838,7 +838,7 @@ const StaircaseWaterway: React.FC = () => {
                 setHasStarted(true);
                 synth.init(); // Initialize audio context on first interaction
               }}
-              className="w-full py-4 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 shadow-xl text-zinc-900 font-medium text-lg hover:bg-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+              className="w-full py-4 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 shadow-xl text-zinc-900 font-pixel font-bold text-lg hover:bg-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
               Start Experience
             </button>
